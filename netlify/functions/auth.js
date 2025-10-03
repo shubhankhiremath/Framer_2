@@ -1,95 +1,76 @@
-const { createClient } = require('@supabase/supabase-js')
+const { createClient } = require('@supabase/supabase-js');
 
-const headers = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Content-Type': 'application/json'
-}
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 exports.handler = async (event, context) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
+
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' }
+    return { statusCode: 200, headers, body: '' };
   }
 
   try {
-    const supabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY
-    )
-
-    const { action } = JSON.parse(event.body || '{}')
-
-    // Google OAuth Sign In
-    if (action === 'google-signin') {
-      const { data, error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${event.headers.origin || event.headers.referer}/auth/callback`
-        }
-      })
-
-      if (error) throw error
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ url: data.url })
-      }
-    }
-
-    // Get current user session
-    if (action === 'get-user') {
-      const authHeader = event.headers.authorization || ''
-      const token = authHeader.replace('Bearer ', '')
+    const body = JSON.parse(event.body);
+    
+    if (body.action === 'verify-user') {
+      // Verify or create user in database
+      const { email, name, avatar_url } = body;
       
-      if (!token) {
-        return {
-          statusCode: 200,
-          headers,
-          body: JSON.stringify({ user: null })
-        }
-      }
-
-      const { data: { user }, error } = await supabase.auth.getUser(token)
-
-      if (error) throw error
-
-      // Get user profile from users table
-      const { data: profile } = await supabase
+      // Check if user exists
+      let { data: existingUser, error: fetchError } = await supabase
         .from('users')
         .select('*')
-        .eq('id', user.id)
-        .single()
+        .eq('email', email)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
+
+      // If user doesn't exist, create them
+      if (!existingUser) {
+        const username = email.split('@')[0];
+        const { data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert([{
+            username: username,
+            email: email,
+            avatar_url: avatar_url,
+            bio: 'Hey there! I am using Reddit.'
+          }])
+          .select()
+          .single();
+
+        if (insertError) throw insertError;
+        existingUser = newUser;
+      }
 
       return {
         statusCode: 200,
         headers,
-        body: JSON.stringify({ user: { ...user, profile } })
-      }
-    }
-
-    // Sign out
-    if (action === 'signout') {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ message: 'Signed out successfully' })
-      }
+        body: JSON.stringify({ user: existingUser })
+      };
     }
 
     return {
       statusCode: 400,
       headers,
       body: JSON.stringify({ error: 'Invalid action' })
-    }
+    };
 
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Auth error:', error);
     return {
       statusCode: 500,
       headers,
       body: JSON.stringify({ error: error.message })
-    }
+    };
   }
-}
+};
