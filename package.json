@@ -1,0 +1,8 @@
+{
+  "name": "reddit-backend",
+  "version": "1.0.0",
+  "description": "Backend API for Reddit-like app",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0"
+  }
+}
