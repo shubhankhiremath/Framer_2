@@ -17,8 +17,8 @@ exports.handler = async (event, context) => {
   }
 
   try {
+    // GET - Fetch all posts
     if (event.httpMethod === 'GET') {
-      // Fetch posts with user info, vote count, and comment count
       const { data: posts, error } = await supabase
         .from('posts')
         .select(`
@@ -32,23 +32,20 @@ exports.handler = async (event, context) => {
 
       if (error) throw error;
 
-      // Get vote counts for each post
+      // Get vote counts and comment counts for each post
       const postsWithCounts = await Promise.all(posts.map(async (post) => {
-        // Get upvote count
         const { count: upvoteCount } = await supabase
           .from('votes')
           .select('*', { count: 'exact', head: true })
           .eq('post_id', post.id)
           .eq('vote_type', 'upvote');
 
-        // Get downvote count
         const { count: downvoteCount } = await supabase
           .from('votes')
           .select('*', { count: 'exact', head: true })
           .eq('post_id', post.id)
           .eq('vote_type', 'downvote');
 
-        // Get comment count
         const { count: commentCount } = await supabase
           .from('comments')
           .select('*', { count: 'exact', head: true })
@@ -72,20 +69,26 @@ exports.handler = async (event, context) => {
       };
     }
 
+    // POST - Create new post
     if (event.httpMethod === 'POST') {
-      const { title, content, image_url, user_id } = JSON.parse(event.body);
+      const { title, content, user_id } = JSON.parse(event.body);
 
       if (!title || !content || !user_id) {
         return {
           statusCode: 400,
           headers,
-          body: JSON.stringify({ error: 'Missing required fields' })
+          body: JSON.stringify({ error: 'Missing required fields: title, content, user_id' })
         };
       }
 
       const { data, error } = await supabase
         .from('posts')
-        .insert([{ title, content, image_url, user_id }])
+        .insert([{ 
+          title, 
+          content, 
+          user_id,
+          image_url: null 
+        }])
         .select()
         .single();
 
@@ -94,7 +97,7 @@ exports.handler = async (event, context) => {
       return {
         statusCode: 201,
         headers,
-        body: JSON.stringify(data)
+        body: JSON.stringify({ success: true, post: data })
       };
     }
 
